@@ -5,6 +5,7 @@ import { geocode, fetchCity, fetchTilesCached, parseLocation, placeName } from '
 import { buildCity, makeProjector } from './city.js';
 import { MangaRenderer } from './render.js';
 import { t, lang, setLang, applyI18n } from './i18n.js';
+import { detailUniform } from './detail.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('c');
@@ -138,6 +139,7 @@ function rebuild(keepCamera = true) {
       treeDetail: state.treeDetail, leafRough: state.leafRough, treeDensity: 1, salt: state.salt,
     });
     scene.add(city.group);
+    applyDetail();
     const i = city.info;
     $('cityInfo').textContent = t('cityInfo', i);
     scene.background.set(state.season === 'winter' ? '#e4e9ee' : '#dfe8ef');
@@ -338,7 +340,15 @@ function frame(t = performance.now()) {
 const redraw = () => { dirty = true; };
 
 // ------------------------------------------------------------------ style uniforms
+// Manga+ (mode 4) = lines+tone plus windows, rooftop clutter, poles and wires, inked sky
+function applyDetail() {
+  const on = state.mode === 4;
+  detailUniform.value = on ? 1 : 0;
+  city?.group.traverse((o) => { if (o.name.startsWith('detail-')) o.visible = on; });
+  manga.r.shadowMap.needsUpdate = true;
+}
 function applyStyle() {
+  applyDetail();
   const u = manga.u;
   u.mode.value = state.mode;
   u.lineW.value = +$('lineW').value;

@@ -3,12 +3,18 @@
 //  2. G-buffer pass (view normal + object id) -> tNormal, with depth -> tDepth
 //  3. full-screen shader: edges from id/normal/depth jumps, screentone from luminance
 import * as THREE from 'three';
+import { detailUniform, WINDOW_GLSL } from './detail.js';
 
 const gbufMat = new THREE.ShaderMaterial({
   vertexShader: /* glsl */ `
     attribute float oid;
+    attribute float wall;
+    uniform float uDetail;
     varying vec3 vN;
     varying float vId;
+    varying float vWall;
+    varying vec3 vWPos;
+    varying vec3 vWN;
     #include <common>
     void main() {
       #include <beginnormal_vertex>
@@ -17,15 +23,27 @@ const gbufMat = new THREE.ShaderMaterial({
       #include <project_vertex>
       vN = normalize(transformedNormal);
       vId = oid;
+      vWall = wall;
+      vWPos = (modelMatrix * vec4(transformed, 1.)).xyz;
+      vWN = normalize(mat3(modelMatrix) * objectNormal);
     }`,
   fragmentShader: /* glsl */ `
+    uniform float uDetail;
     varying vec3 vN;
     varying float vId;
+    varying float vWall;
+    varying vec3 vWPos;
+    varying vec3 vWN;
+    ${WINDOW_GLSL}
     void main() {
       vec3 n = normalize(vN);
       if (!gl_FrontFacing) n = -n;
-      gl_FragColor = vec4(n, vId);
+      float id = vId;
+      // each window gets its own id, so the edge pass outlines it
+      if (uDetail > 0.5 && vWall > 0.5 && w360Window(vWPos, normalize(vWN)) > 0.5) id = fract(vId + 0.5);
+      gl_FragColor = vec4(n, id);
     }`,
+  uniforms: { uDetail: detailUniform },
   side: THREE.DoubleSide,
 });
 
@@ -47,6 +65,10 @@ const compositeMat = new THREE.ShaderMaterial({
     uniform vec3 sky;
     varying vec2 vUv;
 
+    float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+      return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+    float cloudFbm(vec2 p) { float a = 0.5, s = 0.; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; } return s; }
     float lin(float d) { float z = d * 2. - 1.; return 2. * near * far / (far + near - z * (far - near)); }
 
     float edgeAt(vec2 uv, vec4 g0, float d0, vec2 o) {
@@ -83,7 +105,7 @@ const compositeMat = new THREE.ShaderMaterial({
       else if (mode == 1) { outc = isSky ? skyc : col * (1. - 0.85 * e); }
       else {
         float ink = 0.;
-        if (mode == 3 && !isSky) {
+        if (mode >= 3 && !isSky) {
           float L = dot(col, vec3(0.299, 0.587, 0.114));
           float dark = clamp((1. - L - toneStart) / max(0.01, 1. - toneStart), 0., 1.);
           if (L > whiteOut) dark = 0.;
@@ -107,6 +129,16 @@ const compositeMat = new THREE.ShaderMaterial({
         ink = max(ink, e);
         outc = vec3(1. - ink);
         if (transparent > 0.5) { gl_FragColor = vec4(0., 0., 0., ink); return; }
+      }
+      if (mode == 4 && isSky && transparent < 0.5) {
+        // inked cumulus: contour of a stretched noise field, light hatching on the shaded underside
+        vec2 q = gl_FragCoord.xy / (s * vec2(420., 150.));
+        float n = cloudFbm(q + vec2(3.1, 7.7));
+        float band = smoothstep(0.25, 0.75, vUv.y);
+        float c = n * band;
+        float line = 1. - smoothstep(0.6, 1.3, abs(c - 0.5) / max(fwidth(c), 1e-4));
+        float under = step(0.5, c) * step(c, 0.535) * step(abs(fract((gl_FragCoord.x - gl_FragCoord.y) / (4.5 * s)) - 0.5), 0.12);
+        outc = vec3(1. - max(line, under * 0.6));
       }
       if (transparent > 0.5 && isSky) { gl_FragColor = vec4(0.); return; }
       gl_FragColor = vec4(outc, 1.);

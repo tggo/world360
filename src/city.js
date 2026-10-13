@@ -2,6 +2,7 @@
 // (object id) that the line-art pass uses to find object boundaries.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { makeBuildingMaterial } from './detail.js';
 
 const M_PER_DEG_LAT = 110540;
 
@@ -36,7 +37,8 @@ function setColor(geo, color) {
 }
 function clean(geo) {
   // keep only attributes every merged geometry shares
-  for (const k of Object.keys(geo.attributes)) if (!['position', 'normal', 'color', 'oid'].includes(k)) geo.deleteAttribute(k);
+  for (const k of Object.keys(geo.attributes)) if (!['position', 'normal', 'color', 'oid', 'wall'].includes(k)) geo.deleteAttribute(k);
+  if (!geo.attributes.wall) geo.setAttribute('wall', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count), 1));
   return geo.index ? geo.toNonIndexed() : geo;
 }
 
@@ -210,7 +212,7 @@ const ROOFS = ['#8a4b3a', '#6f6a66', '#7a3f33', '#5e5a57', '#946150'].map((c) =>
 const FLAT_ROOF = new THREE.Color('#bdb8b0');
 
 function buildBuildings(els, P, opts, info) {
-  const geos = [];
+  const geos = [], roofGeos = [];
   const partsOf = new Set();
   const seen = new Set();
   for (const el of els) if (el.tags?.['building:part']) partsOf.add(el.id);
@@ -255,7 +257,27 @@ function buildBuildings(els, P, opts, info) {
       // colour the top cap like a flat roof
       const nrm = g.attributes.normal, col = g.attributes.color;
       for (let i = 0; i < nrm.count; i++) if (nrm.getY(i) > 0.9) col.setXYZ(i, FLAT_ROOF.r, FLAT_ROOF.g, FLAT_ROOF.b);
+      g.setAttribute('wall', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(1), 1));
       geos.push(clean(setOid(g, oid)));
+      // Manga+: rooftop clutter on flat roofs (AC units, stair huts, water tanks)
+      if (!pitched && A > 90 && wallH > 5) {
+        const n = 1 + Math.floor(rnd(seed + 21) * Math.min(5, A / 140));
+        const xs = poly.outer.map((q) => q[0]), ys = poly.outer.map((q) => q[1]);
+        const bx0 = Math.min(...xs), bx1 = Math.max(...xs), by0 = Math.min(...ys), by1 = Math.max(...ys);
+        for (let k = 0, placed = 0; k < 30 && placed < n; k++) {
+          const q = [bx0 + rnd(seed + 40 + k * 2) * (bx1 - bx0), by0 + rnd(seed + 41 + k * 2) * (by1 - by0)];
+          if (!pointInRing(q, poly.outer)) continue;
+          const r = rnd(seed + 90 + k);
+          let ug;
+          if (r < 0.18) { ug = new THREE.CylinderGeometry(1.1, 1.1, 2.2, 10); ug.translate(0, 2.6, 0); }
+          else if (r < 0.4) { ug = new THREE.BoxGeometry(3.2, 2.6, 2.6); ug.translate(0, 1.3, 0); }
+          else { ug = new THREE.BoxGeometry(1.4 + r, 0.9 + r * 0.6, 1.0 + r * 0.5); ug.translate(0, 0.5, 0); }
+          ug.rotateY(Math.atan2(box ? box.uy : 0, box ? box.ux : 1));
+          ug.translate(q[0], minH + wallH, -q[1]);
+          roofGeos.push(clean(setOid(setColor(ug, new THREE.Color('#cfccc6')), nextOid())));
+          placed++;
+        }
+      }
       if (pitched) {
         const r = roofGeo(box, minH + wallH, roofShape);
         const rc = tags['roof:colour'] ? safeColor(tags['roof:colour'], ROOFS[0]) : ROOFS[Math.floor(rnd(seed + 5) * ROOFS.length)];
@@ -264,7 +286,7 @@ function buildBuildings(els, P, opts, info) {
       info.buildings++;
     }
   }
-  return geos;
+  return { geos, roofGeos };
 }
 function safeColor(v, fb) { try { return new THREE.Color(v); } catch { return fb; } }
 
@@ -434,9 +456,10 @@ export function buildCity(data, center, opts) {
 
   const group = new THREE.Group();
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-  const add = (geos, name, { shadow = true, receive = true } = {}) => {
+  const bmat = makeBuildingMaterial();
+  const add = (geos, name, { shadow = true, receive = true, material = mat } = {}) => {
     if (!geos.length) return;
-    const m = new THREE.Mesh(mergeGeometries(geos, false), mat);
+    const m = new THREE.Mesh(mergeGeometries(geos, false), material);
     m.name = name; m.castShadow = shadow; m.receiveShadow = receive;
     group.add(m);
   };
@@ -555,9 +578,70 @@ export function buildCity(data, center, opts) {
   add(foot, 'footways', { shadow: false });
   add(roads, 'roads', { shadow: false });
   add(rail, 'rail', { shadow: false });
-  add(buildBuildings(els, P, opts, info), 'buildings');
+  const bb = buildBuildings(els, P, opts, info);
+  add(bb.geos, 'buildings', { material: bmat });
+  add(bb.roofGeos, 'detail-rooftop');
+  addPoles(group, roadLines, R);
   add(treeGeos, 'trees');
   add(carGeos, 'cars', { shadow: false });
   add(peopleGeos, 'people', { shadow: false });
   return { group, info, projector: P, roadLines };
+}
+
+// Manga+: utility poles every ~30 m along ordinary streets, three sagging wires between them
+const POLE_ROADS = new Set(['residential', 'tertiary', 'unclassified', 'service', 'living_street', 'secondary']);
+function addPoles(group, roadLines, R) {
+  const poles = [], wires = [];
+  let s = 7;
+  for (const r of roadLines) {
+    if (!POLE_ROADS.has(r.t)) continue;
+    const side = rnd(++s) < 0.5 ? 1 : -1;
+    let carry = 12 * rnd(++s), prev = null;
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const [x0, y0] = r.pts[i], [x1, y1] = r.pts[i + 1];
+      const L = Math.hypot(x1 - x0, y1 - y0);
+      if (L < 0.1) continue;
+      const ux = (x1 - x0) / L, uy = (y1 - y0) / L;
+      const off = side * (r.w / 2 + 0.8);
+      for (let d = carry; d < L; d += 30) {
+        const px = x0 + ux * d - uy * off, py = y0 + uy * d + ux * off;
+        if (Math.hypot(px, py) > R) { prev = null; continue; }
+        const oid = nextOid();
+        const pole = new THREE.CylinderGeometry(0.11, 0.15, 8.5, 6); pole.translate(0, 4.25, 0);
+        const arm = new THREE.BoxGeometry(1.8, 0.12, 0.12); arm.translate(0, 7.8, 0); arm.rotateY(Math.atan2(uy, ux) + Math.PI / 2);
+        for (const g of [pole, arm]) { g.translate(px, 0, -py); poles.push(clean(setOid(setColor(g, new THREE.Color('#7d7872')), oid))); }
+        const cur = { x: px, y: py, nx: -uy, ny: ux };
+        if (prev && Math.hypot(prev.x - px, prev.y - py) < 45) {
+          for (const k of [-0.8, 0, 0.8]) {
+            const a = [prev.x + prev.nx * k, 7.8, prev.y + prev.ny * k], b = [px + cur.nx * k, 7.8, py + cur.ny * k];
+            for (let j = 0; j < 8; j++) {
+              for (const tt of [j / 8, (j + 1) / 8]) {
+                const sag = 0.55 * 4 * tt * (1 - tt);
+                wires.push(a[0] + (b[0] - a[0]) * tt, a[1] - sag, -(a[2] + (b[2] - a[2]) * tt));
+              }
+            }
+          }
+        }
+        prev = cur;
+      }
+      carry = (carry - L) % 30; if (carry < 0) carry += 30;
+    }
+  }
+  if (poles.length) {
+    const m = new THREE.Mesh(mergeGeometries(poles, false), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    m.name = 'detail-poles';
+    group.add(m);
+  }
+  if (wires.length) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
+    const n = wires.length / 3;
+    const nn = new Float32Array(n * 3); for (let i = 1; i < nn.length; i += 3) nn[i] = 1;
+    g.setAttribute('normal', new THREE.BufferAttribute(nn, 3));
+    g.setAttribute('oid', new THREE.BufferAttribute(new Float32Array(n).fill(0.0123), 1));
+    g.setAttribute('wall', new THREE.BufferAttribute(new Float32Array(n), 1));
+    const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#1a1a1a' }));
+    l.name = 'detail-wires';
+    group.add(l);
+  }
 }

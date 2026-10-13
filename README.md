@@ -17,7 +17,7 @@ Inspired by [どこでもロケハン](https://oyasumi-gamedev.com/tools/rokehan
 - **Search**: place name, address, `lat, lon`, degrees/minutes/seconds, Google Maps and OpenStreetMap links, or drop a KML/GeoJSON file. Shift+click the scene to move the pin.
 - **City**: buildings, roads, footpaths, rails, water, parks and trees within 200 m – 1 km. Heights come from OSM tags; when a building has none, the height is guessed from its type and footprint (🎲 re-rolls the guesses). Small rectangular houses get gabled or hipped roofs. Four seasons, optional people and cars.
 - **Camera**: presets (bird's-eye, top-down, intersection, street, low angle), 14–85 mm lens, two-point perspective, walk mode (WASD + mouse look, Shift to run), double-click to fly to a point.
-- **Drawing**: color, color + lines, lines, lines + tone. Line width, edge detail, tone pattern (dots / lines / cross-hatch), tone size and threshold, solid black fill, white-out. Manual or real sun position with shadows.
+- **Drawing**: color, color + lines, lines, lines + tone, and Manga+ (lines + tone plus facade windows, rooftop units, utility poles with wires and an inked sky, all procedural). Line width, edge detail, tone pattern (dots / lines / cross-hatch), tone size and threshold, solid black fill, white-out. Manual or real sun position with shadows.
 - **Export**: PNG up to 4800 px (transparent background, OSM credit), GLB with the whole scene, and a share link that keeps place, camera and style.
 - **Comic render** (optional): the current frame is used as an img2img base for Krea2 on your own ComfyUI.
 - **Interface**: English and Ukrainian.
