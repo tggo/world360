@@ -9,7 +9,9 @@ const gbufMat = new THREE.ShaderMaterial({
   vertexShader: /* glsl */ `
     attribute float oid;
     attribute float wall;
+    attribute vec4 win;
     uniform float uDetail;
+    varying vec4 vWin;
     varying vec3 vN;
     varying float vId;
     varying float vWall;
@@ -24,6 +26,7 @@ const gbufMat = new THREE.ShaderMaterial({
       vN = normalize(transformedNormal);
       vId = oid;
       vWall = wall;
+      vWin = win;
       vWPos = (modelMatrix * vec4(transformed, 1.)).xyz;
       vWN = normalize(mat3(modelMatrix) * objectNormal);
     }`,
@@ -32,6 +35,7 @@ const gbufMat = new THREE.ShaderMaterial({
     varying vec3 vN;
     varying float vId;
     varying float vWall;
+    varying vec4 vWin;
     varying vec3 vWPos;
     varying vec3 vWN;
     ${WINDOW_GLSL}
@@ -40,7 +44,7 @@ const gbufMat = new THREE.ShaderMaterial({
       if (!gl_FrontFacing) n = -n;
       float id = vId;
       // each window gets its own id, so the edge pass outlines it
-      if (uDetail > 0.5 && vWall > 0.5 && w360Window(vWPos, normalize(vWN)) > 0.5) id = fract(vId + 0.5);
+      if (uDetail > 0.5 && w360Window(vWPos, normalize(vWN), vWall, vWin, vId) > 0.5) id = fract(vId + 0.5);
       gl_FragColor = vec4(n, id);
     }`,
   uniforms: { uDetail: detailUniform },
@@ -53,7 +57,7 @@ const compositeMat = new THREE.ShaderMaterial({
     res: { value: new THREE.Vector2() }, near: { value: 1 }, far: { value: 1000 },
     mode: { value: 3 }, lineW: { value: 1.2 }, normalTh: { value: 0.75 }, depthTh: { value: 0.04 },
     toneSize: { value: 5 }, toneStart: { value: 0.35 }, toneOpacity: { value: 1 }, pattern: { value: 0 },
-    betaTh: { value: 0.12 }, whiteOut: { value: 0.88 }, transparent: { value: 0 }, sky: { value: new THREE.Color('#dfe8ef') },
+    betaTh: { value: 0.12 }, invProj: { value: new THREE.Matrix4() }, camWorld: { value: new THREE.Matrix4() }, whiteOut: { value: 0.88 }, transparent: { value: 0 }, sky: { value: new THREE.Color('#dfe8ef') },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`,
   fragmentShader: /* glsl */ `
@@ -63,6 +67,7 @@ const compositeMat = new THREE.ShaderMaterial({
     uniform int mode, pattern; uniform float lineW, normalTh, depthTh;
     uniform float toneSize, toneStart, toneOpacity, betaTh, whiteOut, transparent;
     uniform vec3 sky;
+    uniform mat4 invProj, camWorld;
     varying vec2 vUv;
 
     float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -132,9 +137,13 @@ const compositeMat = new THREE.ShaderMaterial({
       }
       if (mode == 4 && isSky && transparent < 0.5) {
         // inked cumulus: contour of a stretched noise field, light hatching on the shaded underside
-        vec2 q = gl_FragCoord.xy / (s * vec2(420., 150.));
+        // clouds live on the sky dome (view direction), so they stay put when the camera turns
+        vec4 vr = invProj * vec4(vUv * 2. - 1., 1., 1.);
+        vec3 dir = normalize((camWorld * vec4(normalize(vr.xyz / vr.w), 0.)).xyz);
+        float az = atan(dir.x, -dir.z), el = asin(clamp(dir.y, -1., 1.));
+        vec2 q = vec2(az * 2.2, el * 7.);
         float n = cloudFbm(q + vec2(3.1, 7.7));
-        float band = smoothstep(0.25, 0.75, vUv.y);
+        float band = smoothstep(0.02, 0.25, el);
         float c = n * band;
         float line = 1. - smoothstep(0.6, 1.3, abs(c - 0.5) / max(fwidth(c), 1e-4));
         float under = step(0.5, c) * step(c, 0.535) * step(abs(fract((gl_FragCoord.x - gl_FragCoord.y) / (4.5 * s)) - 0.5), 0.12);
@@ -202,6 +211,8 @@ export class MangaRenderer {
     this.u.tDepth.value = this.gRT.depthTexture;
     this.u.res.value.set(W, H);
     this.u.near.value = camera.near; this.u.far.value = camera.far;
+    this.u.invProj.value.copy(camera.projectionMatrixInverse);
+    this.u.camWorld.value.copy(camera.matrixWorld);
     r.setRenderTarget(null);
     r.setClearColor(0xffffff, 0);
     r.clear();

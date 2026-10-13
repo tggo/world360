@@ -37,8 +37,9 @@ function setColor(geo, color) {
 }
 function clean(geo) {
   // keep only attributes every merged geometry shares
-  for (const k of Object.keys(geo.attributes)) if (!['position', 'normal', 'color', 'oid', 'wall'].includes(k)) geo.deleteAttribute(k);
+  for (const k of Object.keys(geo.attributes)) if (!['position', 'normal', 'color', 'oid', 'wall', 'win'].includes(k)) geo.deleteAttribute(k);
   if (!geo.attributes.wall) geo.setAttribute('wall', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count), 1));
+  if (!geo.attributes.win) geo.setAttribute('win', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 4), 4));
   return geo.index ? geo.toNonIndexed() : geo;
 }
 
@@ -211,6 +212,31 @@ const WALLS = ['#e8e1d3', '#ddd6c8', '#d4d2cc', '#e6dccb', '#cfc8bb', '#ece6dc',
 const ROOFS = ['#8a4b3a', '#6f6a66', '#7a3f33', '#5e5a57', '#946150'].map((c) => new THREE.Color(c));
 const FLAT_ROOF = new THREE.Color('#bdb8b0');
 
+// Manga+ windows: which buildings get them and what the grid looks like. Returns
+// { style: 0 none | 1 windows | 2 windows + shop fronts, win: [bay, width fraction, floor height, left-out share] }
+const NO_WINDOWS = new Set(['church', 'cathedral', 'chapel', 'mosque', 'temple', 'synagogue', 'shrine', 'garage', 'garages',
+  'shed', 'carport', 'hut', 'roof', 'greenhouse', 'kiosk', 'toilets', 'transformer_tower', 'water_tower', 'silo',
+  'storage_tank', 'bunker', 'ruins', 'bell_tower', 'tower', 'parking', 'service', 'container']);
+const OLD_PUBLIC = new Set(['public', 'civic', 'government', 'townhall', 'school', 'university', 'college', 'museum', 'palace', 'theatre', 'train_station']);
+function windowStyle(tags, A, h, wallH, seed) {
+  const none = { style: 0, win: [0, 0, 0, 0] };
+  const t = tags.building || tags['building:part'] || 'yes';
+  const r = (k) => rnd(seed + 300 + k);
+  if (NO_WINDOWS.has(t) || tags.man_made || tags.amenity === 'place_of_worship' || tags.tower) return none;
+  if (wallH < 2.6 || A < 25) return none;
+  // towers, spires, chimneys: tall and narrow
+  if (h / Math.sqrt(A) > 2.4) return none;
+  if (r(0) < 0.1) return none; // some plain walls, for variety
+  const old = OLD_PUBLIC.has(t) || tags.amenity === 'townhall' || tags.historic || tags.heritage
+    || (tags['building:architecture'] && !/modern/.test(tags['building:architecture']));
+  if (old) return { style: 1, win: [3.8 + r(1) * 1.2, 0.3 + r(2) * 0.08, 4 + r(3) * 0.6, 0.05 + r(4) * 0.1] };
+  if (['industrial', 'warehouse', 'manufacture', 'hangar', 'factory'].includes(t)) {
+    return { style: 1, win: [5 + r(1) * 3, 0.45, Math.max(4, wallH * 0.55), 0.3 + r(4) * 0.3] };
+  }
+  const shops = ['commercial', 'retail', 'supermarket', 'hotel'].includes(t) || tags.shop || ((t === 'apartments' || t === 'yes') && r(5) < 0.3);
+  return { style: shops ? 2 : 1, win: [2.8 + r(1) * 1.2, 0.32 + r(2) * 0.14, 2.9 + r(3) * 0.45, r(4) * 0.18] };
+}
+
 function buildBuildings(els, P, opts, info) {
   const geos = [], roofGeos = [];
   const partsOf = new Set();
@@ -257,7 +283,12 @@ function buildBuildings(els, P, opts, info) {
       // colour the top cap like a flat roof
       const nrm = g.attributes.normal, col = g.attributes.color;
       for (let i = 0; i < nrm.count; i++) if (nrm.getY(i) > 0.9) col.setXYZ(i, FLAT_ROOF.r, FLAT_ROOF.g, FLAT_ROOF.b);
-      g.setAttribute('wall', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(1), 1));
+      const ws = windowStyle(tags, A, h, wallH, seed);
+      const nv = g.attributes.position.count;
+      g.setAttribute('wall', new THREE.BufferAttribute(new Float32Array(nv).fill(ws.style), 1));
+      const wa = new Float32Array(nv * 4);
+      for (let i = 0; i < nv; i++) wa.set(ws.win, i * 4);
+      g.setAttribute('win', new THREE.BufferAttribute(wa, 4));
       geos.push(clean(setOid(g, oid)));
       // Manga+: rooftop clutter on flat roofs (AC units, stair huts, water tanks)
       if (!pitched && A > 90 && wallH > 5) {
@@ -269,7 +300,7 @@ function buildBuildings(els, P, opts, info) {
           if (!pointInRing(q, poly.outer)) continue;
           const r = rnd(seed + 90 + k);
           let ug;
-          if (r < 0.18) { ug = new THREE.CylinderGeometry(1.1, 1.1, 2.2, 10); ug.translate(0, 2.6, 0); }
+          if (r < 0.18) { ug = new THREE.CylinderGeometry(1.1, 1.1, 2.2, 10); ug.translate(0, 1.1, 0); }
           else if (r < 0.4) { ug = new THREE.BoxGeometry(3.2, 2.6, 2.6); ug.translate(0, 1.3, 0); }
           else { ug = new THREE.BoxGeometry(1.4 + r, 0.9 + r * 0.6, 1.0 + r * 0.5); ug.translate(0, 0.5, 0); }
           ug.rotateY(Math.atan2(box ? box.uy : 0, box ? box.ux : 1));
