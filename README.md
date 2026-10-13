@@ -4,6 +4,12 @@ Any place on Earth as a comic background. Type a city or address: World360 build
 
 Live demo: https://world360.ihatebot.com
 
+| Webtoon | Manga |
+|---|---|
+| ![Webtoon render](docs/webtoon.png) | ![Manga render](docs/manga.png) |
+
+<sub>Comic renders made from World360 frames with Krea2.</sub>
+
 Inspired by [どこでもロケハン](https://oyasumi-gamedev.com/tools/rokehan/).
 
 ## Features
