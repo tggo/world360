@@ -1,0 +1,13 @@
+[Unit]
+Description=world360 API: frame -> Krea2 img2img on ComfyUI
+After=network-online.target
+
+[Service]
+User=world360
+WorkingDirectory=/opt/world360-api
+ExecStart=/opt/world360-api/world360-api -listen 127.0.0.1:18096 -comfy http://COMFY_HOST:8188 -per-day 2 -quota-file /opt/world360-api/quota.json
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

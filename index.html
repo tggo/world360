@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>World360 — location scout</title>
+  <meta name="description" content="Any city from OpenStreetMap in 3D, drawn as a manga background: lines, screentone, PNG and GLB." />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="panel">
+      <header>
+        <h1>World360</h1>
+        <div class="lang" id="langSwitch">
+          <button data-lang="en">EN</button><button data-lang="uk">UA</button>
+        </div>
+        <button id="togglePanel" class="ghost" data-i18n-title="collapse">☰</button>
+      </header>
+      <div class="scroll">
+        <section>
+          <form id="searchForm">
+            <input id="q" data-i18n-ph="searchPh" autocomplete="off" />
+            <button type="submit" data-i18n="build"></button>
+          </form>
+          <div class="hint" data-i18n="searchHint"></div>
+          <div id="status" class="status"></div>
+        </section>
+
+        <section>
+          <h2 data-i18n="city"></h2>
+          <label><span data-i18n="radius"></span> <select id="radius">
+            <option value="200">200 m</option><option value="350" selected>350 m</option>
+            <option value="500">500 m</option><option value="750">750 m</option><option value="1000">1 km</option>
+          </select></label>
+          <label><span data-i18n="season"></span> <select id="season">
+            <option value="spring" data-i18n="spring"></option><option value="summer" selected data-i18n="summer"></option>
+            <option value="autumn" data-i18n="autumn"></option><option value="winter" data-i18n="winter"></option>
+          </select></label>
+          <label><span data-i18n="traffic"></span> <select id="traffic">
+            <option value="none" data-i18n="none"></option><option value="few" selected data-i18n="few"></option><option value="many" data-i18n="many"></option>
+          </select></label>
+          <label><span data-i18n="trees"></span> <select id="treeDetail">
+            <option value="0" data-i18n="facetedRough"></option><option value="1" selected data-i18n="faceted"></option><option value="2" data-i18n="smooth"></option>
+          </select></label>
+          <label><span data-i18n="leafEdge"></span> <input id="leafRough" type="range" min="0" max="0.6" step="0.05" value="0.3" /></label>
+          <div class="row">
+            <button id="reroll" class="ghost" data-i18n="heights" data-i18n-title="heightsTitle"></button>
+            <button id="rebuild" class="ghost" data-i18n="rebuild"></button>
+          </div>
+          <div id="cityInfo" class="hint"></div>
+        </section>
+
+        <section>
+          <h2 data-i18n="camera"></h2>
+          <div class="chips" id="presets">
+            <button data-p="bird" data-i18n="bird"></button><button data-p="top" data-i18n="top"></button>
+            <button data-p="cross" data-i18n="cross"></button><button data-p="street" data-i18n="street"></button>
+            <button data-p="low" data-i18n="low"></button>
+          </div>
+          <label><span data-i18n="lens"></span> <span id="lensVal">28</span>
+            <input id="lens" type="range" min="14" max="85" step="1" value="28" /></label>
+          <label class="check"><input id="twoPoint" type="checkbox" /> <span data-i18n="twoPoint"></span></label>
+          <label class="check"><input id="stand" type="checkbox" /> <span data-i18n="walk"></span></label>
+          <div id="walkHint" class="hint" hidden data-i18n="walkHint"></div>
+          <div class="hint" data-i18n="camHint"></div>
+        </section>
+
+        <section>
+          <h2 data-i18n="style"></h2>
+          <div class="chips" id="modes">
+            <button data-m="0" data-i18n="color"></button><button data-m="1" data-i18n="colorLines"></button>
+            <button data-m="2" data-i18n="lines"></button><button data-m="3" class="on" data-i18n="linesTone"></button>
+          </div>
+          <label><span data-i18n="lineW"></span> <input id="lineW" type="range" min="0.5" max="4" step="0.1" value="1.3" /></label>
+          <label><span data-i18n="normalTh"></span> <input id="normalTh" type="range" min="0.3" max="0.98" step="0.01" value="0.75" /></label>
+          <label><span data-i18n="pattern"></span> <select id="pattern">
+            <option value="0" data-i18n="dots"></option><option value="1" data-i18n="stripes"></option><option value="2" data-i18n="hatch"></option>
+          </select></label>
+          <label><span data-i18n="toneSize"></span> <input id="toneSize" type="range" min="2.5" max="12" step="0.5" value="5" /></label>
+          <label><span data-i18n="toneStart"></span> <input id="toneStart" type="range" min="0" max="0.8" step="0.01" value="0.5" /></label>
+          <label><span data-i18n="toneOpacity"></span> <input id="toneOpacity" type="range" min="0" max="1" step="0.05" value="1" /></label>
+          <label><span data-i18n="beta"></span> <input id="betaTh" type="range" min="0" max="0.4" step="0.01" value="0.1" /></label>
+          <label><span data-i18n="whiteOut"></span> <input id="whiteOut" type="range" min="0.4" max="1" step="0.01" value="0.62" /></label>
+        </section>
+
+        <section>
+          <h2 data-i18n="light"></h2>
+          <label class="check"><input id="realSun" type="checkbox" /> <span data-i18n="realSun"></span></label>
+          <div id="sunManual">
+            <label><span data-i18n="azimuth"></span> <input id="sunAz" type="range" min="0" max="360" step="1" value="215" /></label>
+            <label><span data-i18n="elevation"></span> <input id="sunEl" type="range" min="3" max="89" step="1" value="38" /></label>
+          </div>
+          <div id="sunReal" hidden>
+            <label><span data-i18n="dateTime"></span> <input id="sunTime" type="datetime-local" /></label>
+          </div>
+          <label class="check"><input id="shadows" type="checkbox" checked /> <span data-i18n="shadows"></span></label>
+        </section>
+
+        <section>
+          <h2 data-i18n="ai"></h2>
+          <div class="chips" id="aiStyles"></div>
+          <label><span data-i18n="freedom"></span> <span id="denoiseVal">0.55</span>
+            <input id="denoise" type="range" min="0.35" max="0.8" step="0.01" value="0.55" /></label>
+          <input id="aiExtra" data-i18n-ph="extraPh" maxlength="300" style="width:100%" />
+          <div class="row">
+            <button id="aiGo" data-i18n="generate"></button>
+            <span id="aiStatus" class="hint"></span>
+          </div>
+          <div class="hint" data-i18n="aiHint"></div>
+        </section>
+
+        <section>
+          <h2 data-i18n="export"></h2>
+          <label><span data-i18n="pngSize"></span> <select id="pngSize">
+            <option>2400</option><option selected>3600</option><option>4800</option>
+          </select></label>
+          <label class="check"><input id="pngTransparent" type="checkbox" /> <span data-i18n="transparent"></span></label>
+          <label class="check"><input id="pngCredit" type="checkbox" checked /> <span data-i18n="credit"></span></label>
+          <div class="row">
+            <button id="savePng">PNG</button>
+            <button id="saveGlb" class="ghost">GLB</button>
+            <button id="share" class="ghost" data-i18n="link"></button>
+          </div>
+        </section>
+        <footer class="hint" data-i18n-html="footer"></footer>
+      </div>
+    </aside>
+    <main id="view">
+      <canvas id="c"></canvas>
+      <div id="gallery" hidden>
+        <header><b data-i18n="gallery"></b><button id="galleryClose" class="ghost">✕</button></header>
+        <div id="galleryGrid"></div>
+      </div>
+      <div id="busy" hidden><div class="spinner"></div><span id="busyText"></span></div>
+    </main>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

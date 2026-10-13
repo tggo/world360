@@ -1,0 +1,6 @@
+node_modules
+dist
+/server/server
+/server/world360-api
+quota.json
+.DS_Store

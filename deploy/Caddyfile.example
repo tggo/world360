@@ -1,0 +1,15 @@
+world360.example.com {
+	encode gzip zstd
+	handle /api/* {
+		request_body {
+			max_size 12MB
+		}
+		reverse_proxy 127.0.0.1:18096 {
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+	handle {
+		root * /opt/world360
+		file_server
+	}
+}
